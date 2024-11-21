@@ -1,0 +1,157 @@
+// class SpotLightVolumetric {
+//     constructor(params) {
+//         this.spotLight = new BABYLON.SpotLight("volumetric-spotlight", params.position, params.direction, params.angle, params.exponent);
+//         this.spotLight.diffuse = params.diffuse ?? BABYLON.Color3.Red();
+//         this.spotLight.intensity = params.intensity;
+
+//         // 加载灯具模型并附加到光源
+//         this.loadFixture(params.scene);
+//         this.createFakeSpotlightVolumetric(params);
+//     }
+
+//     async loadFixture(scene) {
+//         try {
+//             const fixtureResult = await BABYLON.SceneLoader.ImportMeshAsync(
+//                 "",
+//                 "/model/", // 确保路径正确
+//                 "fixture.gltf", // 替换为你的灯具模型文件名
+//                 scene
+//             );
+
+//             if (fixtureResult.meshes.length > 0) {
+//                 this.fixtureMesh = fixtureResult.meshes[0];
+//                 this.fixtureMesh.position.copyFrom(this.spotLight.position);
+//                 this.fixtureMesh.position.y = this.spotLight.position.y-9;
+//                 this.fixtureMesh.parent = this.spotLight;
+//                 console.log(`灯具模型加载成功:`, this.fixtureMesh);
+//             }
+//         } catch (error) {
+//             console.error(`灯具模型加载失败:`, error);
+//         }
+//     }
+
+//     createFakeSpotlightVolumetric(params) {
+//         this.spotLight.computeWorldMatrix();
+//         const lightPos = this.spotLight.getAbsolutePosition();
+//         console.log("lightPos", lightPos);
+
+//         // Create the spotlight cone
+//         this.spotLightCone = BABYLON.MeshBuilder.CreateCylinder("spot_light_cone", {
+//             diameterBottom: params.diameterBottom,
+//             diameterTop: params.diameterTop,
+//             tessellation: 64,
+//             subdivisions: 64,
+//             height:12
+//         });
+
+//         // Set the pivot point to the base of the cylinder
+//         this.spotLightCone.setPivotPoint(new BABYLON.Vector3(0, 0, 0));
+
+//         // Rotate the cylinder to point upwards
+//         this.spotLightCone.rotate(BABYLON.Axis.X, -Math.PI / 2);
+//         this.spotLightCone.bakeCurrentTransformIntoVertices();
+//         this.spotLightCone.lookAt(this.spotLight.direction);
+        
+//         // Adjust the position to the top vertex of the cone
+//         this.spotLightCone.position.copyFrom(lightPos.add(this.spotLight.direction.normalize().scale(2.5))); // 使用光锥高度的一半来设置位置
+//         const conePosition = this.spotLightCone.getAbsolutePosition();
+//         console.log("Spotlight Cone Position:", conePosition);
+
+//         // Define shaders
+//         BABYLON.Effect.ShadersStore['volumetricSpotVertexShader'] = `
+//         precision highp float;
+//         attribute vec3 position;
+//         attribute vec3 normal;
+//         uniform mat4 worldViewProjection;
+//         uniform mat4 world;
+//         varying vec3 vNormalW;
+//         varying vec3 vPositionW;
+
+//         void main() {
+//             vec4 p = vec4(position, 1.);
+//             gl_Position = worldViewProjection * p;
+
+//             vNormalW = normalize(vec3(world * vec4(normal, 0.0)));
+//             vPositionW = vec3(world * vec4(position, 1.0));
+//         }
+//         `;
+
+//         BABYLON.Effect.ShadersStore['volumetricSpotFragmentShader'] = `
+//         precision highp float;
+//         varying vec3 vPositionW;
+//         varying vec3 vNormalW;
+//         uniform float exponent;
+//         uniform float angle;
+//         uniform vec3 lightPos;
+//         uniform vec3 diffuse;
+//         uniform float intensity;
+
+//         void main() {
+//             float rayIntensity = distance(vPositionW, lightPos) / exponent;
+//             rayIntensity = 1.0 - clamp(rayIntensity, 0.0, 1.0);
+
+//             vec3 normal = vNormalW;
+//             normal.z = abs(normal.z);
+
+//             vec3 forward = vec3(0., 0., 1.0);
+//             float angleIntensity = dot(normal, forward);
+
+//             // Smooth the intensity
+//             angleIntensity = pow(angleIntensity, angle);
+//             rayIntensity *= angleIntensity;
+
+//             gl_FragColor = vec4(diffuse, rayIntensity * intensity);
+//         }
+//         `;
+
+//         this.volumetricMaterial = new BABYLON.ShaderMaterial('volumetricSpotLightMaterial', params.scene, 'volumetricSpot', {
+//             attributes: ["position", "normal", "uv"],
+//             uniforms: ["world", "worldView", "worldViewProjection", "view", "projection"],
+//             needAlphaBlending: true,
+//             needAlphaTesting: true
+//         });
+//         this.volumetricMaterial.setFloat("exponent", this.spotLight.exponent *2);
+//         this.volumetricMaterial.setFloat("angle", this.spotLight.angle / 200);
+//         this.volumetricMaterial.setColor3("diffuse", this.spotLight.diffuse);
+//         this.volumetricMaterial.setVector3("lightPos", lightPos);
+//         this.volumetricMaterial.setFloat("intensity", this.spotLight.intensity);
+
+//         this.spotLightCone.material = this.volumetricMaterial;
+//     }
+
+//     update() {
+//         const lightPos = this.spotLight.getAbsolutePosition();
+//         this.spotLightCone.lookAt(this.spotLight.direction);
+//         this.spotLightCone.position.copyFrom(lightPos.add(this.spotLight.direction.normalize()));
+
+//         // Create a ray from the light's position in the direction of the light
+//         const ray = new BABYLON.Ray(lightPos, this.spotLight.direction);
+
+//         // Check for collisions
+//         const hit = this.spotLight.getScene().pickWithRay(ray);
+
+//         // if (hit.hit) {
+//         //     // If a collision is detected, calculate the distance to the collision point
+//         //     const collisionPoint = hit.pickedPoint;
+//         //     console.log(collisionPoint);
+//         //     const distanceToCollision = BABYLON.Vector3.Distance(lightPos, collisionPoint);
+
+//         //     // Adjust the height of the spotlight cone based on the collision distance
+//         //     this.spotLightCone.scaling.y = distanceToCollision; // Set the height of the cone
+//         //     this.spotLightCone.position.y = lightPos.y - (distanceToCollision / 2); // Center the cone on the light position
+//         // } else {
+//         //     // Reset the height if no collision
+//         //     this.spotLightCone.scaling.y = 10; // Default height
+//         //     this.spotLightCone.position.y = lightPos.y - 5; // Center the cone
+//         // }
+
+//         // Update the volumetric material properties
+//         this.volumetricMaterial.setFloat("exponent", this.spotLight.exponent * 2);
+//         this.volumetricMaterial.setFloat("angle", this.spotLight.angle / 200);
+//         this.volumetricMaterial.setColor3("diffuse", this.spotLight.diffuse);
+//         this.volumetricMaterial.setVector3("lightPos", lightPos);
+//         this.volumetricMaterial.setFloat("intensity", this.spotLight.intensity);
+//     }
+// }
+
+// 创建三点打光系统

@@ -1,0 +1,146 @@
+                // 可选：启用阴影生成
+                const gradientTexture = new BABYLON.DynamicTexture("gradient", { width: 256, height: 256 }, scene, false);
+                const ctx = gradientTexture.getContext();
+                const gradient = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+                gradient.addColorStop(0, "rgba(255, 255, 255, 1)"); // 中心颜色
+                gradient.addColorStop(1, "rgba(255, 255, 255, 0)"); // 边缘颜色
+                ctx.fillStyle = gradient;
+                ctx.fillRect(0, 0, 256, 256);
+                gradientTexture.update();
+                const shadowGenerator = new BABYLON.ShadowGenerator(1024, spotLight);
+                shadowGenerator.usePoissonSampling = true; 
+                const fresnelMaterial = new BABYLON.ShaderMaterial("fresnelMaterial", scene, {
+                    vertex: `
+                        precision highp float;
+                        attribute vec3 position;
+                        attribute vec3 normal;
+                        varying vec3 vNormal;
+                        varying vec3 vPosition;
+    
+                        void main() {
+                            vNormal = normalize(normal);
+                            vPosition = position;
+                            gl_Position = vec4(position, 1.0);
+                        }
+                    `,
+                    fragment: `
+                        precision highp float;
+                        varying vec3 vNormal;
+                        varying vec3 vPosition;
+    
+                        void main() {
+                            vec3 viewDir = normalize(-vPosition);
+                            float fresnel = pow(1.0 - max(dot(vNormal, viewDir), 0.0), 3.0);
+                            float edgeSoftness = smoothstep(0.01, 0.1, fresnel); // 调整边缘柔和度
+                            gl_FragColor = vec4(edgeSoftness, edgeSoftness, edgeSoftness, 1.0); // 灰度值
+                        }
+                    `
+                });
+                // 设置聚光灯的颜色和强度
+
+
+
+                 const lightCircle = BABYLON.MeshBuilder.CreateDisc("lightCircle", {
+                                radius: 2,
+                                tessellation: 64
+                            }, scene);
+
+                            // 设置位置
+                            lightCircle.rotation.x = Math.PI / 2;
+                            lightCircle.position = new BABYLON.Vector3(
+                                spotLight.position.x,
+                                spotLight.position.y,
+                                spotLight.position.z
+                            );
+
+                            // 为 WebGPU 创建 PBR 材质
+                            const lightCircleMaterial = new BABYLON.PBRMaterial("lightCircleMaterial", scene);
+                            
+                            // 创建渐变纹理
+                            const gradientTexture = new BABYLON.DynamicTexture("gradient", {
+                                width: 256,
+                                height: 256
+                            }, scene);
+                            
+                            const ctx = gradientTexture.getContext();
+                            const gradient = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+                            gradient.addColorStop(0, "rgba(255, 255, 255, 0.8)");
+                            gradient.addColorStop(0.5, "rgba(255, 255, 255, 0.3)");
+                            gradient.addColorStop(1, "rgba(255, 255, 255, 0)");
+                            ctx.fillStyle = gradient;
+                            ctx.fillRect(0, 0, 256, 256);
+                            gradientTexture.update();
+
+                            // 设置 PBR 材质属性
+                            lightCircleMaterial.albedoTexture = gradientTexture;
+                            lightCircleMaterial.emissiveTexture = gradientTexture;
+                            lightCircleMaterial.opacityTexture = gradientTexture;
+                            lightCircleMaterial.useAlphaFromAlbedoTexture = true;
+                            lightCircleMaterial.emissiveColor = new BABYLON.Color3(1, 1, 0.8);
+                            lightCircleMaterial.emissiveIntensity = 2;
+                            lightCircleMaterial.alpha = 0.5;
+                            lightCircleMaterial.transparencyMode = BABYLON.PBRMaterial.PBRMATERIAL_ALPHABLEND;
+                            lightCircleMaterial.metallic = 0;
+                            lightCircleMaterial.roughness = 1;
+                            lightCircleMaterial.unlit = true;
+
+                            // 应用材质
+                            lightCircle.material = lightCircleMaterial;
+
+                            // 创建外圈
+                            const outerLightCircle = BABYLON.MeshBuilder.CreateDisc("outerLightCircle", {
+                                radius: 2,
+                                tessellation: 64
+                            }, scene);
+                            
+                            outerLightCircle.rotation.x = Math.PI / 2;
+                            outerLightCircle.position = new BABYLON.Vector3(
+                                spotLight.position.x,
+                                0.005,
+                                spotLight.position.z
+                            );
+
+                            // 克隆材质并修改属性
+                            const outerMaterial = lightCircleMaterial.clone("outerLightCircleMaterial");
+                            outerMaterial.alpha = 0.2;
+                            outerMaterial.emissiveIntensity = 1;
+                            outerLightCircle.material = outerMaterial;
+
+                            // 添加缩放动画
+                            const createScaleAnimation = (mesh, baseScale = 1) => {
+                                const keys = [];
+                                const frameRate = 30;
+                                
+                                keys.push({
+                                    frame: 0,
+                                    value: new BABYLON.Vector3(baseScale, baseScale, baseScale)
+                                });
+                                keys.push({
+                                    frame: frameRate,
+                                    value: new BABYLON.Vector3(baseScale * 1.1, baseScale * 1.1, baseScale * 1.1)
+                                });
+                                keys.push({
+                                    frame: frameRate * 2,
+                                    value: new BABYLON.Vector3(baseScale, baseScale, baseScale)
+                                });
+
+                                const animation = new BABYLON.Animation(
+                                    "scaleAnimation",
+                                    "scaling",
+                                    frameRate,
+                                    BABYLON.Animation.ANIMATIONTYPE_VECTOR3,
+                                    BABYLON.Animation.ANIMATIONLOOPMODE_CYCLE
+                                );
+
+                                animation.setKeys(keys);
+                                mesh.animations = [animation];
+                                scene.beginAnimation(mesh, 0, frameRate * 2, true);
+                            };
+
+                            // 应用动画到两个圈
+                            createScaleAnimation(lightCircle);
+                            createScaleAnimation(outerLightCircle);
+
+                            // 确保正确的渲染顺序
+                            lightCircle.renderingGroupId = 1;
+                            outerLightCircle.renderingGroupId = 1;
